@@ -590,7 +590,7 @@ function connectWS() {
 function toggleAuto(){
   autoAI=!autoAI;
   document.getElementById("auto-tog").className="tog"+(autoAI?" on":"");
-  if(autoAI){autoTimer=setInterval(triggerAI,60000);showToast("Auto-analysis ON (60s)","tinf");}
+  if(autoAI){autoTimer=setInterval(triggerAI,10000);showToast("Auto-analysis ON (10s)","tinf");}
   else{clearInterval(autoTimer);autoTimer=null;showToast("Auto-analysis OFF","");}
 }
 
