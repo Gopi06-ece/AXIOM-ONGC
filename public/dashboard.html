@@ -205,6 +205,9 @@ footer{position:relative;z-index:1;border-top:1px solid var(--border);padding:12
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
       Change Server
     </a>
+    <button class="back-btn" onclick="localStorage.removeItem('axiom_token');window.location.href='/'" style="color:var(--red)">
+      Log Out
+    </button>
   </div>
 </header>
 
@@ -499,22 +502,37 @@ function setStatus(state, lbl) {
   l.textContent  = lbl;
 }
 
+let reconnectAttempts = 0;
+
 function connectWS() {
   if (!CFG.endpoint) { window.location.href="/"; return; }
+  const token = localStorage.getItem("axiom_token");
+  if (!token) { window.location.href="/"; return; }
+
   setStatus("connecting","CONNECTING");
-  const wsUrl = `ws://${location.host}`;
-  wsConn = new WebSocket(wsUrl);
+  const bridgeUrl = CFG.bridgeUrl || `${location.protocol==="https:"?"wss:":"ws:"}//${location.host}`;
+  wsConn = new WebSocket(bridgeUrl);
 
   wsConn.onopen = () => {
-    wsConn.send(JSON.stringify({ type:"connect", endpoint:ENDPOINT, tags:TAGS, auth:AUTH }));
+    wsConn.send(JSON.stringify({ type:"auth", token }));
   };
 
   wsConn.onmessage = (e) => {
     const msg = JSON.parse(e.data);
 
+    if (msg.type === "auth_result") {
+      if (msg.ok) {
+        wsConn.send(JSON.stringify({ type:"connect", endpoint:ENDPOINT, tags:TAGS, auth:AUTH }));
+      } else {
+        showToast("Session expired — redirecting to login","terr");
+        localStorage.removeItem("axiom_token");
+        setTimeout(()=>window.location.href="/", 1200);
+      }
+    }
     if (msg.type === "connected") {
       setStatus("connected","CONNECTED");
       showToast(`Connected — ${msg.tagCount} tags`,"tok");
+      reconnectAttempts = 0;
     }
     if (msg.type === "connect_failed") {
       setStatus("disconnected","FAILED");
@@ -522,6 +540,20 @@ function connectWS() {
     }
     if (msg.type === "disconnected") {
       setStatus("disconnected","DISCONNECTED");
+    }
+    if (msg.type === "reconnecting") {
+      reconnectAttempts = msg.attempt;
+      setStatus("connecting", `RECONNECTING (#${msg.attempt})`);
+      showToast(`OPC-UA reconnect attempt #${msg.attempt}…`,"tinf");
+    }
+    if (msg.type === "connection_lost") {
+      setStatus("connecting","RECONNECTING");
+      showToast("Connection lost — auto-reconnecting…","terr");
+    }
+    if (msg.type === "connection_restored") {
+      setStatus("connected","CONNECTED");
+      showToast("Connection restored ✓","tok");
+      reconnectAttempts = 0;
     }
     if (msg.type === "data" && Array.isArray(msg.tags)) {
       msg.tags.forEach(t => {
